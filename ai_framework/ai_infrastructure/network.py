@@ -1,0 +1,322 @@
+__author__ = "Jerry Overton"
+__copyright__ = "Copyright (C) 2022 appliedAIstudio LLC"
+__version__ = "0.0.1"
+
+# needed to make local variables behave like centralized ai_infrastructure
+from ai_framework.singleton import Singleton
+
+# needed for message queuing and validation
+from jsonschema import validate, ValidationError
+import json
+
+# needed to reference the json schema file from within the host application
+import pkgutil
+
+# used to log system messages in the event of network connection failure
+import sys
+
+# needed to create events when updating the world
+from .world_event import WorldEvent
+
+# MQTT Networks
+from awscrt import io, mqtt
+from awsiot import mqtt_connection_builder
+from uuid import uuid4
+import time
+
+from .info import Info
+from .message import Message
+from .world import World
+
+
+class InvalidMessageFormat(Exception):
+    pass
+
+
+class InvalidTopic(Exception):
+    pass
+
+
+class ConnectionIsNotEstablished(Exception):
+    pass
+
+
+class Network:
+
+    def the_world(self):
+        # returns a list of world event data classes that describe the current state of the world
+        raise NotImplementedError
+
+    def the_world_states(self):
+        # returns a dictionary that lists the current state of the world
+        raise NotImplementedError
+
+    def update_the_world(self, state_name, state_value, context):
+        # adds the given update to the persistent store of the world state
+        raise NotImplementedError
+
+    def create_topic(self, topic):
+        # creates the given topic in the centralized message queue
+        raise NotImplementedError
+
+    def publish(self, topic, message):
+        # uses the centralized message queue to publish the given message to the given topic
+        raise NotImplementedError
+
+    def subscribe(self, topic, callback_function):
+        # registers the given callback function to be called by the centralized message queue
+        # when a message is published to the given topic
+        raise NotImplementedError
+
+
+@Singleton
+class LocalNetwork(Network):
+    _the_world = []
+    __message_queue = {}
+
+    # refer to the package schema file in the host
+    __json_schema_file_path = 'schema.json'
+    __json_schema_string = pkgutil.get_data(__name__, __json_schema_file_path).decode("utf-8")
+    __json_schema = json.loads(__json_schema_string)
+
+    def the_world(self):
+        return self._the_world
+
+    def the_world_states(self):
+        # create a dictionary entry for each existing world event
+        the_world_states = {}
+        for world_event in self._the_world:
+            the_world_states[world_event.world_state_name] = world_event.world_state_value
+        return the_world_states
+
+    def _existing_world_event(self, world_state_name):
+        # search the world for the first event with the given world state name
+        existing_world_event = None
+        for world_event in self._the_world:
+            if world_event.world_state_name == world_state_name:
+                existing_world_event = world_event
+        return existing_world_event
+
+    def update_the_world(self, state_name, state_value, context):
+        # world events must be passed in as primitive data so that the world in-memory storage
+        # will not contain pointers to data classes on external machines. external references will
+        # cause timeouts, race conditions and action failures
+
+        # if there is an existing world event with the same world state name as the new world event,
+        # remove the existing world event
+        existing_world_event = self._existing_world_event(state_name)
+        if existing_world_event is not None:
+            self._the_world.remove(existing_world_event)
+
+        new_world_event = WorldEvent(state_name, state_value, context)
+        self._the_world.append(new_world_event)
+
+    def create_topic(self, topic):
+        self.__message_queue[topic] = []
+
+    def topics(self):
+        return list(self.__message_queue.keys())
+
+    def publish(self, topic, message):
+        # raise an error to the caller if the topic is invalid
+        try:
+            self.__validate_topic(topic)
+        except InvalidTopic:
+            raise InvalidTopic
+
+        self.__validate_message(message)
+
+        # todo update the world with the effects of publishing this message
+
+        # call each callback function registered under the given topic
+        for callback in self.__message_queue[topic]:
+            callback(topic, message)
+
+    def subscribe(self, topic, callback_function):
+        # register the callback function under the given topic
+        self.__message_queue[topic].append(callback_function)
+
+    def reset(self):
+        # clears all state
+        self._the_world = []
+        self.__message_queue = {}
+
+    def __validate_topic(self, topic):
+        # validate the the topic exists in the communication ai_infrastructure
+        if topic not in self.__message_queue.keys():
+            raise InvalidTopic
+
+    def __validate_message(self, json_message):
+        # validate the schema against the message and raise an error if invalid
+        try:
+            validate(json_message, self.__json_schema)
+        except ValidationError:
+            raise InvalidMessageFormat
+
+
+class MqttNetwork(Network):
+    """Define and Network class that can be used by devices
+    This class doesn't implement the world"""
+    def __init__(self):
+        """Init the MQTT client"""
+        self.__mqtt_client = None
+
+    def __del__(self):
+        if self.__mqtt_client is not None:
+            print("Disconnecting...")
+            disconnect_future = self.__mqtt_client.disconnect()
+            disconnect_future.result()
+            print("Disconnected!")
+
+    def connect(self, endpoint="a15645u9kev0b1-ats.iot.eu-west-2.amazonaws.com",
+                port=8883, cert="/home/ubuntu/certs/certificate.pem.crt",
+                key="/home/ubuntu/certs/private.pem.key", client_id=None):
+        """Connect to an MQTT server"""
+        if client_id is None:
+            client_id = "HighCliff-" + str(uuid4())
+
+        event_loop_group = io.EventLoopGroup(1)
+        host_resolver = io.DefaultHostResolver(event_loop_group)
+        client_bootstrap = io.ClientBootstrap(event_loop_group, host_resolver)
+
+        self.__mqtt_client = mqtt_connection_builder.mtls_from_path(
+            endpoint=endpoint,
+            port=port,
+            cert_filepath=cert,
+            pri_key_filepath=key,
+            client_bootstrap=client_bootstrap,
+            on_connection_interrupted=self.__on_connection_interrupted,
+            on_connection_resumed=self.__on_connection_resumed,
+            client_id=client_id,
+            clean_session=True,
+            keep_alive_secs=30
+        )
+        connect_future = self.__mqtt_client.connect()
+        connect_future.result()
+
+    def publish(self, topic, message):
+        """Publish a message in a topic"""
+        self.__validate_connection()
+        self.__validate_message(message)
+        payload = json.dumps(message)
+        print(f'Publishing in topic {topic}: {payload}')
+        self.__mqtt_client.publish(
+            topic=topic,
+            payload=payload,
+            qos=mqtt.QoS.AT_LEAST_ONCE,
+        )
+
+    def subscribe(self, topic, callback_function):
+        """Subcribe to a topic"""
+        self.__validate_connection()
+        subscribe_future, _ = self.__mqtt_client.subscribe(
+            topic=topic,
+            qos=mqtt.QoS.AT_LEAST_ONCE,
+            callback=callback_function,
+        )
+        subscribe_result = subscribe_future.result()
+        print(f'Subscribed to {topic}')
+
+    def create_topic(self, topic):
+        """Doesn't need to create topics using
+        awscrt.mqtt.Connection, they are created automatically"""
+        pass
+
+    def __validate_message(self, json_message):
+        """Validate a message format"""
+        try:
+            validate(json_message, self.__json_schema)
+        except ValidationError:
+            raise InvalidMessageFormat
+
+    def __validate_connection(self):
+        """Validate that the connection has been established"""
+        if self.__mqtt_client is None:
+            raise ConnectionIsNotEstablished("Connection haven't been established, use connect method to do so")
+
+    @classmethod
+    def __on_connection_interrupted(cls, connection, error, **kwargs):
+        """Execute on connection interrupted"""
+        print("Connection interrupted. error: {}".format(error))
+
+    @classmethod
+    def __on_connection_resumed(cls, connection, return_code, session_present, **kwargs):
+        """Execute on connection resume to restore everything"""
+        print("Connection resumed. return_code: {} session_present: {}".format(return_code, session_present))
+
+        if return_code == mqtt.ConnectReturnCode.ACCEPTED and not session_present:
+            print("Session did not persist. Resubscribing to existing topics...")
+            resubscribe_future, _ = connection.resubscribe_existing_topics()
+
+            # Cannot synchronously wait for resubscribe result because we're on the connection's event-loop thread,
+            # evaluate result with a callback instead.
+            resubscribe_future.add_done_callback(cls.__on_resubscribe_complete)
+
+    @classmethod
+    def __on_resubscribe_complete(cls, resubscribe_future):
+        """Check resuscribe is completed"""
+        resubscribe_results = resubscribe_future.result()
+        print("Resubscribe results: {}".format(resubscribe_results))
+        for topic, qos in resubscribe_results['topics']:
+            if qos is None:
+                sys.exit("Server rejected resubscribe to topic: {}".format(topic))
+
+
+@Singleton
+class AiMqttNetwork(MqttNetwork):
+    """MQTT Network that includes world implementation"""
+    def __init__(self):
+        super().__init__()
+        self.__the_world = World()
+        self.__world_topic = 'world'
+
+    def connect(self, endpoint="a15645u9kev0b1-ats.iot.eu-west-2.amazonaws.com",
+                port=8883, cert="/home/ubuntu/certs/certificate.pem.crt",
+                key="/home/ubuntu/certs/private.pem.key", client_id=None):
+        """Connect to an MQTT server and subscribe to every topic"""
+        super().connect(endpoint, port, cert, key, client_id)
+        self.__subscribe_everything()
+
+    def __subscribe_everything(self):
+        """Listen in every existing topic"""
+        self.subscribe('#', self.process_external_world_update)
+
+    def process_external_world_update(self, topic, payload, **kwargs):
+        """Update the world for every message received"""
+        decoded_payload = str(payload.decode("utf-8", "ignore"))
+        data = json.loads(decoded_payload)
+        print(f'Received from topic {topic} data: {data}')
+        try:
+            message = Message(**data)
+            self.__the_world.update(topic, message)
+        except TypeError as err:
+            print(f'Error while processing message {data}: {err}')
+
+    def update_the_world(self, update):
+        """Update the world with given effects"""
+        message = self.__create_message(update)
+        self.publish(self.__world_topic, message._asdict())
+        self.__the_world.update(self.__world_topic, message)
+
+    @classmethod
+    def __create_message(cls, effects):
+        """Create a formated message given only the effects"""
+        message = Message(
+            event_type='effects',
+            event_tags=None,
+            event_source='highcliff_sdk',
+            timestamp=time.time(),
+            device_info=None,
+            application_info=None,
+            user_info=None,
+            environment=None,
+            context=None,
+            effects=effects,
+            data=None,
+        )
+        Info.check_message(message)
+        return message
+
+    def the_world(self):
+        """Return the world effects"""
+        return self.__the_world.effects

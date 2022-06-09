@@ -1,0 +1,14 @@
+[
+  {
+    "goal_state_name": "body_temperature_monitored",
+    "goal_state_value": true,
+    "criticality":  0.5,
+    "time_sensitivity":  0.5
+  },
+  {
+    "goal_state_name": "body_temperature_is_normal",
+    "goal_state_value":  true,
+    "criticality":  0.1,
+    "time_sensitivity":  0.7
+  }
+]

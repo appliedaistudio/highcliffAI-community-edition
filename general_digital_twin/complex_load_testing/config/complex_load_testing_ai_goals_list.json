@@ -1,0 +1,32 @@
+[
+    {
+        "goal_state_name": "goal_0_achieved",
+        "goal_state_value": true,
+        "criticality": 0.1,
+        "time_sensitivity": 0.1
+    },
+    {
+        "goal_state_name": "run_failed_action",
+        "goal_state_value": true,
+        "criticality": 0.1,
+        "time_sensitivity": 1
+    },
+    {
+        "goal_state_name": "run_unregister_action",
+        "goal_state_value": true,
+        "criticality": 0.4,
+        "time_sensitivity": 0.4
+    },
+    {
+        "goal_state_name": "pursue_the_unachievable",
+        "goal_state_value": true,
+        "criticality": 0.5,
+        "time_sensitivity": 0.5
+    },
+    {
+        "goal_state_name": "pursue_the_un_heard_of",
+        "goal_state_value": true,
+        "criticality": 0.3,
+        "time_sensitivity": 0.3
+    }
+]
