@@ -1,0 +1,45 @@
+{
+  "info": {
+    "title": "Body temperature sensor description using the OneDM Semantic Definition Format",
+    "version": "2022-21-05",
+    "copyright": "Copyright 2022 appliedAIstudio LLC. All rights reserved.",
+    "license": "https://example.com/license"
+  },
+  "namespace": {
+    "temperature_control": "https://appliedai.studio/highcliffai/temperature_control"
+  },
+  "defaultNamespace": "temperature_control",
+  "sdfObject": {
+    "Sensor": {
+      "sdfProperty": {
+        "type": {
+          "description": "This is a device that can tell us what the body temperature is",
+          "sdfChoice": {
+            "thermal": {
+              "description": "Detects heat"
+            },
+            "electrical": {
+              "description": "Detects electrical current"
+            }
+          }
+        },
+        "data_quality": {
+          "description": "TBD"
+        },
+        "min": {
+          "sdfType": "float",
+          "const": 0
+        },
+        "max": {
+          "sdfType": "float",
+          "const": 200
+        },
+        "currentValue": {
+          "sdfType": "byte-string",
+          "const": "![Output](https://34a0vrrs61o2fpmoztvq511d-wpengine.netdna-ssl.com/wp-content/uploads/2019/10/WiFi-Survey-Heatmap.jpg)"
+        }
+      }
+    }
+  }
+}
+

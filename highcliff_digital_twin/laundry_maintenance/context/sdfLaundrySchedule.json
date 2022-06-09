@@ -1,0 +1,70 @@
+{
+  "$schema": "https://raw.githubusercontent.com/ietf-wg-asdf/SDF/master/sdf-validation.jso.json",
+  "info": {
+    "title": "Describes the laundry schedule",
+    "version": "2022-21-05",
+    "copyright": "Copyright 2022 appliedAIstudio LLC. All rights reserved.",
+    "license": "https://example.com/license"
+  },
+  "namespace": {
+    "laundry": "https://appliedai.studio/highcliffai/laundry"
+  },
+  "defaultNamespace": "laundry",
+  "sdfThing": {
+    "scheduleTemplate": {
+      "sdfObject": {
+        "routine": {
+          "sdfProperty": {
+            "routine_type": {
+              "sdfChoice": ["wash_whites", "wash_colors", "wash_sheets"]
+            },
+            "recurrence": {
+              "sdfChoice": ["daily", "weekly", "monthly"]
+            },
+            "routine_log": {
+              "sdfType": "byte-string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "sdfThing": {
+    "schedule1": {
+      "sdfRef": "scheduleTemplate",
+      "sdfObject": {
+        "routine": {
+          "sdfProperty": {
+            "routine_type": {
+              "sdfChoice": "wash_whites"
+            },
+            "recurrence": {
+              "sdfChoice": "daily"
+            },
+            "routine_log": {
+              "const": "![](https://16ajm63bvi397f7uz9dmaopb-wpengine.netdna-ssl.com/wp-content/uploads/2021/08/calendar-heatmap-built-with-d3js-like-github.png)"
+            }
+          }
+        }
+      }
+    },
+    "schedule2": {
+      "sdfRef": "scheduleTemplate",
+      "sdfObject": {
+        "routine": {
+          "sdfProperty": {
+            "routine_type": {
+              "sdfChoice": "wash_whites"
+            },
+            "recurrence": {
+              "sdfChoice": "daily"
+            },
+            "routine_log": {
+              "const": "![](https://16ajm63bvi397f7uz9dmaopb-wpengine.netdna-ssl.com/wp-content/uploads/2021/08/calendar-heatmap-built-with-d3js-like-github.png)"
+            }
+          }
+        }
+      }
+    }
+  }
+}

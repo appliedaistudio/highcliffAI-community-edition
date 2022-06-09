@@ -1,0 +1,22 @@
+{
+  "info": {
+    "title": "Describes the laundry schedule",
+    "version": "2022-21-05",
+    "copyright": "Copyright 2022 appliedAIstudio LLC. All rights reserved.",
+    "license": "https://example.com/license"
+  },
+  "namespace": {
+    "laundry": "https://appliedai.studio/highcliffai/laundry"
+  },
+  "defaultNamespace": "laundry",
+  "sdfObject": {
+    "washer": {
+      "sdfProperty": {
+        "washCycle": {
+          "sdfChoice": ["regular", "delicate", "heavy", "spin-only"],
+          "currentValue": "![](https://kenmore-brand-prod.s3.amazonaws.com/comfy/cms/files/204/files/original/washer-phone-screen-4.png)"
+        }
+      }
+    }
+  }
+}
